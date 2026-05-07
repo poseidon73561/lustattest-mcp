@@ -1,8 +1,8 @@
-
- // LUSTAT Remote MCP Server — Railway deployment
- //Dataset: DF_C1217 — Salaire mensuel moyen par secteur (NACE Rév.2) et niveau d'éducation
- // No SDK dependency — plain HTTP/SSE + JSON-RPC 2.0
- /
+/**
+ * LUSTAT Remote MCP Server — Railway deployment
+ * Dataset: DF_C1217 — Salaire mensuel moyen par secteur (NACE Rév.2) et niveau d'éducation
+ * No SDK dependency — plain HTTP/SSE + JSON-RPC 2.0
+ */
 
 import express from "express";
 import cors from "cors";
