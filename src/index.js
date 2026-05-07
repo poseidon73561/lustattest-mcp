@@ -693,7 +693,7 @@ async function fetchLustatData(key, startPeriod, endPeriod) {
   const params = new URLSearchParams({ dimensionAtObservation: "AllDimensions" });
   if (startPeriod) params.set("startPeriod", startPeriod);
   if (endPeriod)   params.set("endPeriod", endPeriod);
-  const url = `https://lustat.statec.lu/rest/data/LU1,DF_C1217/${key}?${params}`;
+  const url = `https://lustat.statec.lu/rest/data/LU1,DSD_ESS_EARN_M@DF_C1217/1.0/${key}?${params}`;
   console.log(`[LUSTAT] ${url}`);
   // 15 second timeout
   const controller = new AbortController();
