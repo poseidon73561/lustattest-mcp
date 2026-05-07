@@ -1,0 +1,20 @@
+{
+  "name": "lustattest-mcp",
+  "version": "1.0.0",
+  "description": "Remote MCP server for LUSTAT DF_C1217 — Luxembourg wages by sector and education",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}
