@@ -695,11 +695,62 @@ async function fetchLustatData(key, startPeriod, endPeriod) {
   if (endPeriod)   params.set("endPeriod", endPeriod);
   const url = `https://lustat.statec.lu/rest/data/LU1,DF_C1217/${key}?${params}`;
   console.log(`[LUSTAT] ${url}`);
-  const r = await fetch(url, { headers: { Accept: "application/vnd.sdmx.data+csv;labels=both" } });
-  if (!r.ok) throw new Error(`LUSTAT ${r.status}: ${(await r.text()).slice(0,200)}`);
-  return parseCSV(await r.text());
+  // 15 second timeout
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  let r, bodyText;
+  try {
+    r = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: "application/vnd.sdmx.data+json",
+        "Accept-Language": "en"
+      }
+    });
+    bodyText = await r.text();
+  } catch(fetchErr) {
+    clearTimeout(timeout);
+    console.log(`[FETCH ERROR] ${fetchErr.message}`);
+    throw new Error(`Network error: ${fetchErr.message}`);
+  }
+  clearTimeout(timeout);
+  console.log(`[HTTP] status=${r.status} len=${bodyText.length} preview="${bodyText.slice(0,300)}"`);
+  if (!r.ok) throw new Error(`LUSTAT ${r.status}: ${bodyText.slice(0,200)}`);
+  if (!bodyText.trim()) throw new Error("Empty response from LUSTAT");
+  if (bodyText.trim().startsWith("{")) return parseJSON(bodyText);
+  return parseCSV(bodyText);
 }
 
+
+function parseJSON(json) {
+  try {
+    const data = JSON.parse(json);
+    const rows = [];
+    // SDMX-JSON structure: data.dataSets[0].observations
+    const obs = data?.data?.dataSets?.[0]?.observations || data?.dataSets?.[0]?.observations || {};
+    const dims = data?.data?.structure?.dimensions?.observation || data?.structure?.dimensions?.observation || [];
+    const atts = data?.data?.structure?.attributes?.observation || data?.structure?.attributes?.observation || [];
+    const allDims = [...dims, ...atts];
+    console.log(`[JSON] observations=${Object.keys(obs).length} dims=${dims.map(d=>d.id).join(",")}`);
+    Object.entries(obs).forEach(([key, vals]) => {
+      const indices = key.split(":").map(Number);
+      const row = {};
+      indices.forEach((idx, i) => {
+        if (allDims[i]) {
+          const dim = allDims[i];
+          row[dim.id] = dim.values?.[idx]?.id || String(idx);
+        }
+      });
+      row["OBS_VALUE"] = String(vals[0] ?? "");
+      rows.push(row);
+    });
+    if (rows.length > 0) console.log(`[JSON] row0: ${JSON.stringify(rows[0])}`);
+    return rows;
+  } catch(e) {
+    console.log(`[JSON] parse error: ${e.message}`);
+    return [];
+  }
+}
 function parseCSV(csv) {
   const lines = csv.trim().split("\n").filter(l => l.trim());
   if (lines.length < 2) return [];
