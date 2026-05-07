@@ -8,7 +8,7 @@ import express from "express";
 import cors from "cors";
 
 const app     = express();
-const PORT    = process.env.PORT || 3000;
+const PORT = parseInt(process.env.PORT) || 8080;
 const API_KEY = process.env.MCP_API_KEY || null;
 
 app.use(cors());
@@ -689,6 +689,7 @@ const EDUCATION_LEVELS = {
 };
 
 async function fetchLustatData(key, startPeriod, endPeriod) {
+  // Use 'all' as fallback if key fails
   const params = new URLSearchParams({ dimensionAtObservation: "AllDimensions" });
   if (startPeriod) params.set("startPeriod", startPeriod);
   if (endPeriod)   params.set("endPeriod", endPeriod);
@@ -729,6 +730,15 @@ function formatRows(rows) {
 }
 
 async function callTool(name, args={}) {
+  // Helper: find column value case-insensitively
+  function col(row, ...names) {
+    for (const n of names) {
+      const k = Object.keys(row).find(k => k.replace(/[^A-Z]/gi,"").toUpperCase() === n.replace(/[^A-Z]/gi,"").toUpperCase());
+      if (k && row[k] && row[k].trim()) return row[k].trim();
+    }
+    return "";
+  }
+
   if (name==="list_codes") return [
     "## LUSTAT DF_C1217 — Available Codes","","### NACE Sectors",
     ...Object.entries(NACE_SECTORS).map(([k,v])=>`  ${k.padEnd(8)} ${v}`),
@@ -738,30 +748,55 @@ async function callTool(name, args={}) {
 
   if (name==="get_wage_data") {
     const s=args.sector||"_T", edu=args.education||"A4";
-    const rows = await fetchLustatData(`A.${edu}.${s}._T._T._T._T._T`, args.startPeriod||"2010", args.endPeriod||null);
-    return [`## Monthly Wages — ${NACE_SECTORS[s]||s} / ${EDUCATION_LEVELS[edu]||edu}`,`Rows: ${rows.length}`,"",formatRows(rows)].join("\n");
+    const rows = await fetchLustatData("all", args.startPeriod||"2010", args.endPeriod||null);
+    if (rows.length>0) console.log("[DEBUG HEADERS]", Object.keys(rows[0]).join(" | "));
+    if (rows.length>0) console.log("[DEBUG ROW0]", JSON.stringify(rows[0]));
+    // Try to find OBS_VALUE column
+    const valKey = rows.length ? Object.keys(rows[0]).find(k=>k.toUpperCase().includes("OBS")||k.toUpperCase().includes("VALUE")||k.toUpperCase()==="WAGE") : "OBS_VALUE";
+    const lines = rows.slice(0,50).map(r => {
+      const period = col(r,"TIMEPERIOD","TIME","PERIOD","YEAR");
+      const val = valKey ? r[valKey] : "";
+      return `${period} | ${val} EUR`;
+    });
+    return [`## Monthly Wages — ${NACE_SECTORS[s]||s}`,`Education: ${EDUCATION_LEVELS[edu]||edu}`,`Rows: ${rows.length}`,"",lines.join("\n")].join("\n");
   }
 
   if (name==="compare_sectors") {
     const edu=args.education||"A4", yr=args.year||"2022";
-    const secs=Object.keys(NACE_SECTORS).filter(s=>s!=="T").join("+");
-    const rows=await fetchLustatData(`A.${edu}.${secs}._T._T._T._T._T`,yr,yr);
+    const rows=await fetchLustatData("all",yr,yr);
+    if (rows.length>0) console.log("[DEBUG HEADERS]", Object.keys(rows[0]).join(" | "));
+    if (rows.length>0) console.log("[DEBUG ROW0]", JSON.stringify(rows[0]));
+    const valKey = rows.length ? Object.keys(rows[0]).find(k=>k.toUpperCase().includes("OBS")||k.toUpperCase().includes("VALUE")) : null;
     const map={};
-    rows.forEach(r=>{ const s=r["ACTIVITY"]||""; const v=parseFloat(r["OBS_VALUE"]||0); if(s&&v>0)map[s]=v; });
+    rows.forEach(r=>{
+      const s=col(r,"ACTIVITY","NACE","NACER2","SECTOR");
+      const v=parseFloat(valKey?r[valKey]:0);
+      if(s&&v>100) { if(!map[s]||v>map[s]) map[s]=v; }
+    });
     const sorted=Object.entries(map).sort(([,a],[,b])=>b-a)
       .map(([c,v],i)=>`${i+1}. ${(NACE_SECTORS[c]||c).padEnd(45)} ${v.toLocaleString()} EUR`);
-    return [`## Sector Ranking ${yr} — ${EDUCATION_LEVELS[edu]||edu}`,"",...sorted].join("\n");
+    return [`## Sector Ranking ${yr}`,"",
+      sorted.length?sorted.join("\n"):`Debug: ${rows.length} rows. Headers: ${rows.length?Object.keys(rows[0]).join(", "):""}`
+    ].join("\n");
   }
 
   if (name==="compare_education") {
     const s=args.sector||"_T", yr=args.year||"2022";
-    const edus=Object.keys(EDUCATION_LEVELS).filter(e=>e!=="_T"&&e!=="A4").join("+");
-    const rows=await fetchLustatData(`A.${edus}.${s}._T._T._T._T._T`,yr,yr);
+    const rows=await fetchLustatData("all",yr,yr);
+    if (rows.length>0) console.log("[DEBUG HEADERS]", Object.keys(rows[0]).join(" | "));
+    if (rows.length>0) console.log("[DEBUG ROW0]", JSON.stringify(rows[0]));
+    const valKey = rows.length ? Object.keys(rows[0]).find(k=>k.toUpperCase().includes("OBS")||k.toUpperCase().includes("VALUE")) : null;
     const map={};
-    rows.forEach(r=>{ const e=r["EDUCATION"]||""; const v=parseFloat(r["OBS_VALUE"]||0); if(e&&v>0)map[e]=v; });
+    rows.forEach(r=>{
+      const e=col(r,"EDUCATION","ISCED","EDU","EDUC");
+      const v=parseFloat(valKey?r[valKey]:0);
+      if(e&&v>100) { if(!map[e]||v>map[e]) map[e]=v; }
+    });
     const sorted=Object.entries(map).sort(([,a],[,b])=>b-a)
       .map(([c,v])=>`${(EDUCATION_LEVELS[c]||c).padEnd(55)} ${v.toLocaleString()} EUR`);
-    return [`## Education Comparison ${yr} — ${NACE_SECTORS[s]||s}`,"",...sorted].join("\n");
+    return [`## Education Comparison ${yr}`,`Sector: ${NACE_SECTORS[s]||s}`,"",
+      sorted.length?sorted.join("\n"):`Debug: ${rows.length} rows. Headers: ${rows.length?Object.keys(rows[0]).join(", "):""}`
+    ].join("\n");
   }
 
   throw new Error(`Unknown tool: ${name}`);
@@ -817,7 +852,7 @@ app.post("/messages", async (req,res) => {
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`LUSTAT MCP running on port ${PORT}`);
   console.log(`Auth: ${API_KEY?"enabled":"disabled"}`);
 });
