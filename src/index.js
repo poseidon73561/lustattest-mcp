@@ -1,7 +1,7 @@
 
 Copy
 
-#!/usr/bin/env node
+
 /**
  * LUSTAT Remote MCP Server — Railway deployment
  * Dataset: DF_C1217 — Salaire mensuel moyen par secteur (NACE Rév.2) et niveau d'éducation
