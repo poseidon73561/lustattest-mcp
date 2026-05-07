@@ -701,20 +701,26 @@ async function fetchLustatData(key, startPeriod, endPeriod) {
 }
 
 function parseCSV(csv) {
-  const lines = csv.trim().split("\n");
+  const lines = csv.trim().split("\n").filter(l => l.trim());
   if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map(h => h.replace(/"/g,"").trim());
-  return lines.slice(1).map(line => {
-    const vals = splitLine(line);
+  // Auto-detect separator: semicolon or comma
+  const sep = lines[0].includes(";") ? ";" : ",";
+  console.log(`[CSV] separator="${sep}", lines=${lines.length}, sample="${lines[0].slice(0,120)}"`);
+  const headers = lines[0].split(sep).map(h => h.replace(/"/g,"").trim());
+  console.log(`[CSV] headers: ${headers.join(" | ")}`);
+  const rows = lines.slice(1).map(line => {
+    const vals = splitLine(line, sep);
     const row = {};
     headers.forEach((h,i) => { row[h] = (vals[i]||"").replace(/"/g,"").trim(); });
     return row;
   }).filter(r => Object.values(r).some(v => v));
+  if (rows.length > 0) console.log(`[CSV] row0: ${JSON.stringify(rows[0])}`);
+  return rows;
 }
 
-function splitLine(line) {
+function splitLine(line, sep=",") {
   const r=[]; let cur=""; let q=false;
-  for(const c of line){ if(c==='"'){q=!q;}else if(c===','&&!q){r.push(cur);cur="";}else{cur+=c;} }
+  for(const c of line){ if(c==='"'){q=!q;}else if(c===sep&&!q){r.push(cur);cur="";}else{cur+=c;} }
   r.push(cur); return r;
 }
 
