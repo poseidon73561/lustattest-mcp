@@ -487,20 +487,22 @@ function switchTab(name) {
 // Call the Railway MCP server
 async function callMCP(toolName, args) {
   const base = window.location.origin;
-  const res = await fetch(\`\${base}/messages\`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: Date.now(),
-      method: 'tools/call',
-      params: { name: toolName, arguments: args }
-    })
-  });
-  if (!res.ok) throw new Error(\`Server error: \${res.status}\`);
-  const data = await res.json();
+  let res, raw, data;
+  try {
+    res = await fetch(\`\${base}/messages\`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc:'2.0', id:Date.now(), method:'tools/call', params:{name:toolName,arguments:args} })
+    });
+    raw = await res.text();
+  } catch(e) { throw new Error(\`Network: \${e.message}\`); }
+  console.log('[RAW]', raw.slice(0,500));
+  if (!res.ok) throw new Error(\`HTTP \${res.status}: \${raw.slice(0,200)}\`);
+  try { data = JSON.parse(raw); } catch(e) { throw new Error(\`Bad JSON: \${raw.slice(0,100)}\`); }
   if (data.error) throw new Error(data.error.message);
-  return data.result?.content?.[0]?.text || '';
+  const text = data.result?.content?.[0]?.text || '';
+  if (!text) throw new Error(\`Empty result: \${raw.slice(0,300)}\`);
+  return text;
 }
 
 // Parse raw text into rows
@@ -902,11 +904,13 @@ app.get("/mcp", (req,res) => {
 });
 
 app.post("/messages", async (req,res) => {
+  console.log(`[MSG] method=${req.body?.method} tool=${req.body?.params?.name||""}`);
   try {
     const result = await handleMCP(req.body);
     if (result===null) return res.status(204).end();
     res.json(result);
   } catch(err) {
+    console.log(`[MSG ERROR] ${err.message}`);
     res.status(500).json({jsonrpc:"2.0",error:{code:-32603,message:err.message}});
   }
 });
