@@ -805,7 +805,9 @@ async function callTool(name, args={}) {
 
   if (name==="get_wage_data") {
     const s=args.sector||"_T", edu=args.education||"A4";
-    const rows = await fetchLustatData("all", args.startPeriod||"2010", args.endPeriod||null);
+    const eduKey = edu==="A4" ? "." : edu;
+    const secKey = s==="_T" ? "." : s;
+    const rows = await fetchLustatData(`..${eduKey}.${secKey}.....`, args.startPeriod||"2010", args.endPeriod||null);
     if (rows.length>0) console.log("[DEBUG HEADERS]", Object.keys(rows[0]).join(" | "));
     if (rows.length>0) console.log("[DEBUG ROW0]", JSON.stringify(rows[0]));
     // Try to find OBS_VALUE column
@@ -820,7 +822,7 @@ async function callTool(name, args={}) {
 
   if (name==="compare_sectors") {
     const edu=args.education||"A4", yr=args.year||"2022";
-    const rows=await fetchLustatData("all",yr,yr);
+    const rows=await fetchLustatData("........",yr,yr);
     if (rows.length>0) console.log("[DEBUG HEADERS]", Object.keys(rows[0]).join(" | "));
     if (rows.length>0) console.log("[DEBUG ROW0]", JSON.stringify(rows[0]));
     const valKey = rows.length ? Object.keys(rows[0]).find(k=>k.toUpperCase().includes("OBS")||k.toUpperCase().includes("VALUE")) : null;
@@ -839,7 +841,7 @@ async function callTool(name, args={}) {
 
   if (name==="compare_education") {
     const s=args.sector||"_T", yr=args.year||"2022";
-    const rows=await fetchLustatData("all",yr,yr);
+    const rows=await fetchLustatData("........",yr,yr);
     if (rows.length>0) console.log("[DEBUG HEADERS]", Object.keys(rows[0]).join(" | "));
     if (rows.length>0) console.log("[DEBUG ROW0]", JSON.stringify(rows[0]));
     const valKey = rows.length ? Object.keys(rows[0]).find(k=>k.toUpperCase().includes("OBS")||k.toUpperCase().includes("VALUE")) : null;
