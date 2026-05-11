@@ -733,28 +733,44 @@ function parseJSON(json) {
   try {
     const data = JSON.parse(json);
     const rows = [];
-    // SDMX-JSON structure: data.dataSets[0].observations
-    const obs = data?.data?.dataSets?.[0]?.observations || data?.dataSets?.[0]?.observations || {};
-    const dims = data?.data?.structure?.dimensions?.observation || data?.structure?.dimensions?.observation || [];
-    const atts = data?.data?.structure?.attributes?.observation || data?.structure?.attributes?.observation || [];
-    const allDims = [...dims, ...atts];
-    console.log(`[JSON] observations=${Object.keys(obs).length} dims=${dims.map(d=>d.id).join(",")}`);
+    // SDMX-JSON 2.0 format used by LUSTAT
+    const dataset = data?.data?.dataSets?.[0] || data?.dataSets?.[0] || {};
+    const obs = dataset.observations || dataset.series || {};
+    // Dimensions can be in data.data.structure or data.structure
+    const structure = data?.data?.structure || data?.structure || {};
+    const dimList = structure?.dimensions?.observation 
+      || structure?.dimensions?.dataSet
+      || structure?.dimensions?.series
+      || [];
+    const attList = structure?.attributes?.observation || [];
+    console.log(`[JSON] observations=${Object.keys(obs).length} dims=${dimList.map(d=>d.id).join(",")}`);
+    console.log(`[JSON] structure keys=${Object.keys(structure).join(",")}`);
+    console.log(`[JSON] dataset keys=${Object.keys(dataset).join(",")}`);
+    // Also log raw structure for debugging
+    if (dimList.length === 0) {
+      console.log(`[JSON] full structure=${JSON.stringify(structure).slice(0,500)}`);
+    }
     Object.entries(obs).forEach(([key, vals]) => {
       const indices = key.split(":").map(Number);
       const row = {};
+      // Map dimension indices to values
       indices.forEach((idx, i) => {
-        if (allDims[i]) {
-          const dim = allDims[i];
-          row[dim.id] = dim.values?.[idx]?.id || String(idx);
+        const dim = dimList[i];
+        if (dim) {
+          row[dim.id] = dim.values?.[idx]?.id || dim.values?.[idx]?.name || String(idx);
+        } else {
+          row[`DIM_${i}`] = String(idx);
         }
       });
-      row["OBS_VALUE"] = String(vals[0] ?? "");
+      // OBS_VALUE is first element of vals array
+      const obsVal = Array.isArray(vals) ? vals[0] : vals;
+      row["OBS_VALUE"] = obsVal !== null && obsVal !== undefined ? String(obsVal) : "";
       rows.push(row);
     });
     if (rows.length > 0) console.log(`[JSON] row0: ${JSON.stringify(rows[0])}`);
     return rows;
   } catch(e) {
-    console.log(`[JSON] parse error: ${e.message}`);
+    console.log(`[JSON] parse error: ${e.message} stack=${e.stack?.slice(0,200)}`);
     return [];
   }
 }
