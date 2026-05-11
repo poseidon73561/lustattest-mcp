@@ -746,9 +746,14 @@ function parseJSON(json) {
     console.log(`[JSON] observations=${Object.keys(obs).length} dims=${dimList.map(d=>d.id).join(",")}`);
     console.log(`[JSON] structure keys=${Object.keys(structure).join(",")}`);
     console.log(`[JSON] dataset keys=${Object.keys(dataset).join(",")}`);
-    // Also log raw structure for debugging
+    console.log(`[JSON] top keys=${Object.keys(data).join(",")}`);
     if (dimList.length === 0) {
-      console.log(`[JSON] full structure=${JSON.stringify(structure).slice(0,500)}`);
+      // Log full response to find where dimensions are
+      const fullStr = JSON.stringify(data);
+      const dimIdx = fullStr.indexOf('"dimensions"');
+      console.log(`[JSON] dimensions found at idx=${dimIdx}`);
+      if (dimIdx > 0) console.log(`[JSON] dim context=${fullStr.slice(dimIdx-20, dimIdx+300)}`);
+      console.log(`[JSON] data keys=${Object.keys(data?.data||{}).join(",")}`);
     }
     Object.entries(obs).forEach(([key, vals]) => {
       const indices = key.split(":").map(Number);
