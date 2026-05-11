@@ -736,8 +736,8 @@ function parseJSON(json) {
     // SDMX-JSON 2.0 format used by LUSTAT
     const dataset = data?.data?.dataSets?.[0] || data?.dataSets?.[0] || {};
     const obs = dataset.observations || dataset.series || {};
-    // Structure is inside dataset in this SDMX-JSON 2.0 format
-    const structure = dataset.structure || data?.data?.structure || data?.structure || {};
+    // SDMX-JSON 2.0: dimensions are in data.data.structures[0]
+    const structure = data?.data?.structures?.[0] || dataset.structure || data?.data?.structure || data?.structure || {};
     const dimList = structure?.dimensions?.observation 
       || structure?.dimensions?.dataSet
       || structure?.dimensions?.series
