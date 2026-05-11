@@ -532,119 +532,101 @@ async function runTimeSeries() {
   const edu    = document.getElementById('ts-edu').value;
   const start  = document.getElementById('ts-start').value;
   const end    = document.getElementById('ts-end').value;
-
   showLoading('ts-result');
   try {
     const text = await callMCP('get_wage_data', {
-      sector, education: edu,
-      startPeriod: start,
+      sector, education: edu, startPeriod: start,
       ...(end ? { endPeriod: end } : {})
     });
-
-    const rows = parseTextToRows(text);
-    if (!rows.length) { showError('ts-result', 'No data returned. Try different filters.'); return; }
-
-    // Build chart — values over time
-    const dataRows = rows.map(r => ({ year: r[0], val: parseFloat(r[3]) }))
-      .filter(r => !isNaN(r.val) && r.year);
+    // Format: "2010 | Q | _T | 4.124,282 EUR"
+    const dataRows = text.split('\n')
+      .filter(l => /^\d{4}\s*\|/.test(l))
+      .map(l => {
+        const parts = l.split('|').map(s => s.trim());
+        const val = parseFloat((parts[3]||'').replace(/[^\d.]/g,''));
+        return { year: parts[0], val };
+      }).filter(r => !isNaN(r.val) && r.val > 0);
+    if (!dataRows.length) { showError('ts-result', \`No data. Raw: \${text.slice(0,200)}\`); return; }
     const maxVal = Math.max(...dataRows.map(r => r.val));
-
-    const sectorLabel = NACE[sector] || sector;
-    const eduLabel = EDU[edu] || edu;
-
     document.getElementById('ts-result').innerHTML = \`
       <div class="result-card">
         <div class="result-header">
-          <div class="result-title">\${sectorLabel}</div>
-          <div class="result-meta">\${eduLabel} · \${start}\${end?'–'+end:' → latest'}</div>
+          <div class="result-title">\${NACE[sector]||sector}</div>
+          <div class="result-meta">\${EDU[edu]||edu} · \${start}\${end?'–'+end:' → latest'}</div>
         </div>
-        \${dataRows.map(r => \`
-          <div class="bar-row">
-            <div class="bar-label">\${r.year}</div>
-            <div class="bar-track"><div class="bar-fill" style="width:\${(r.val/maxVal*100).toFixed(1)}%"></div></div>
-            <div class="bar-val">\${r.val.toLocaleString('fr-LU')} €</div>
-          </div>\`).join('')}
+        \${dataRows.map(r => \`<div class="bar-row">
+          <div class="bar-label">\${r.year}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:\${(r.val/maxVal*100).toFixed(1)}%"></div></div>
+          <div class="bar-val">\${r.val.toLocaleString('fr-LU')} €</div>
+        </div>\`).join('')}
       </div>\`;
-  } catch(e) {
-    showError('ts-result', e.message);
-  }
+  } catch(e) { showError('ts-result', e.message); }
 }
 
-// COMPARE SECTORS
 async function runSectors() {
   const edu  = document.getElementById('sec-edu').value;
   const year = document.getElementById('sec-year').value;
-
   showLoading('sec-result');
   try {
     const text = await callMCP('compare_sectors', { education: edu, year });
-    const lines = text.split('\\n').filter(l => l.match(/^\\s*\\d+\\./));
-
-    const data = lines.map(l => {
-      const match = l.match(/(\\d[\\d,.\\s]+)\\s*EUR/);
-      const val = match ? parseFloat(match[1].replace(/[\\s,]/g,'').replace(',','.')) : 0;
-      const label = l.replace(/^\\s*\\d+\\.\\s*/, '').replace(/[\\d,.\\s]+EUR.*/, '').trim();
-      return { label, val };
-    }).filter(r => r.val > 0);
-
+    // Format: "1. Financial & insurance          5.927,209 EUR"
+    const data = text.split('\n')
+      .filter(l => /^\d+\./.test(l))
+      .map(l => {
+        const match = l.match(/^\d+\.\s+(.+?)\s+([\d.,]+)\s+EUR/);
+        if (!match) return null;
+        const val = parseFloat(match[2].replace(/[^\d.]/g,''));
+        return { label: match[1].trim(), val };
+      }).filter(r => r && r.val > 0);
+    if (!data.length) { showError('sec-result', \`No data. Raw: \${text.slice(0,200)}\`); return; }
     const maxVal = Math.max(...data.map(r => r.val));
-    const eduLabel = EDU[edu] || edu;
-
     document.getElementById('sec-result').innerHTML = \`
       <div class="result-card">
         <div class="result-header">
           <div class="result-title">Sector Ranking \${year}</div>
-          <div class="result-meta">\${eduLabel}</div>
+          <div class="result-meta">\${EDU[edu]||edu}</div>
         </div>
-        \${data.map((r,i) => \`
-          <div class="bar-row">
-            <div class="bar-label" title="\${r.label}">\${i+1}. \${r.label}</div>
-            <div class="bar-track"><div class="bar-fill" style="width:\${(r.val/maxVal*100).toFixed(1)}%"></div></div>
-            <div class="bar-val">\${r.val.toLocaleString('fr-LU')} €</div>
-          </div>\`).join('')}
+        \${data.map((r,i) => \`<div class="bar-row">
+          <div class="bar-label" title="\${r.label}">\${i+1}. \${r.label}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:\${(r.val/maxVal*100).toFixed(1)}%"></div></div>
+          <div class="bar-val">\${r.val.toLocaleString('fr-LU')} €</div>
+        </div>\`).join('')}
       </div>\`;
-  } catch(e) {
-    showError('sec-result', e.message);
-  }
+  } catch(e) { showError('sec-result', e.message); }
 }
 
-// COMPARE EDUCATION
 async function runEducation() {
   const sector = document.getElementById('edu-sector').value;
   const year   = document.getElementById('edu-year').value;
-
   showLoading('edu-result');
   try {
     const text = await callMCP('compare_education', { sector, year });
-    const lines = text.split('\\n').filter(l => l.includes('EUR') && !l.startsWith('#'));
-
-    const data = lines.map(l => {
-      const match = l.match(/([\\d,.\\s]+)\\s*EUR/);
-      const val = match ? parseFloat(match[1].replace(/[\\s]/g,'').replace(',','.')) : 0;
-      const label = l.replace(/([\\d,.\\s]+)\\s*EUR.*/, '').trim();
-      return { label, val };
-    }).filter(r => r.val > 0);
-
+    // Format: "Tertiary education (ISCED 5-8)     7.234,5 EUR"
+    const data = text.split('\n')
+      .filter(l => l.includes('EUR') && !l.startsWith('#') && !l.startsWith('*') && !l.startsWith('S'))
+      .map(l => {
+        const match = l.match(/^(.+?)\s+([\d.,]+)\s+EUR/);
+        if (!match) return null;
+        const val = parseFloat(match[2].replace(/[^\d.]/g,''));
+        return { label: match[1].trim(), val };
+      }).filter(r => r && r.val > 0);
+    if (!data.length) { showError('edu-result', \`No data. Raw: \${text.slice(0,200)}\`); return; }
     const maxVal = Math.max(...data.map(r => r.val));
-    const sectorLabel = NACE[sector] || sector;
-
     document.getElementById('edu-result').innerHTML = \`
       <div class="result-card">
         <div class="result-header">
           <div class="result-title">Education Impact \${year}</div>
-          <div class="result-meta">\${sectorLabel}</div>
+          <div class="result-meta">\${NACE[sector]||sector}</div>
         </div>
-        \${data.map(r => \`
-          <div class="bar-row">
-            <div class="bar-label" title="\${r.label}">\${r.label}</div>
-            <div class="bar-track"><div class="bar-fill" style="width:\${(r.val/maxVal*100).toFixed(1)}%"></div></div>
-            <div class="bar-val">\${r.val.toLocaleString('fr-LU')} €</div>
-          </div>\`).join('')}
+        \${data.map(r => \`<div class="bar-row">
+          <div class="bar-label" title="\${r.label}">\${r.label}</div>
+          <div class="bar-track"><div class="bar-fill" style="width:\${(r.val/maxVal*100).toFixed(1)}%"></div></div>
+          <div class="bar-val">\${r.val.toLocaleString('fr-LU')} €</div>
+        </div>\`).join('')}
       </div>\`;
-  } catch(e) {
-    showError('edu-result', e.message);
-  }
+  } catch(e) { showError('edu-result', e.message); }
 }
+
 
 // Check API status on load
 (async () => {
