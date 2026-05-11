@@ -17,7 +17,16 @@ const API_KEY = process.env.MCP_API_KEY || null;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(join(__dir, "..", "public")));
+// Try multiple paths for the public folder
+import { existsSync } from "fs";
+const publicPaths = [
+  join(__dir, "..", "public"),
+  join(__dir, "public"),
+  "/app/public",
+];
+const publicPath = publicPaths.find(p => existsSync(p)) || publicPaths[0];
+console.log(`[STATIC] serving from: ${publicPath}`);
+app.use(express.static(publicPath));
 
 app.use((req, res, next) => {
   if (req.path === "/health" || req.path === "/" || req.path.endsWith(".html")) return next();
