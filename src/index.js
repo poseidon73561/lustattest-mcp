@@ -684,10 +684,10 @@ const NACE_SECTORS = {
 };
 
 const EDUCATION_LEVELS = {
-  "_T":"Total (all levels)","A4":"All levels combined",
-  "ED0_2":"Primary & lower secondary (ISCED 0-2)",
-  "ED3_4":"Upper secondary (ISCED 3-4)",
-  "ED5_8":"Tertiary education (ISCED 5-8)",
+  "_T":    "Total (all levels)",
+  "ED0_2": "Primary & lower secondary (ISCED 0-2)",
+  "ED3_4": "Upper secondary (ISCED 3-4)",
+  "ED5_8": "Tertiary education (ISCED 5-8)",
 };
 
 async function fetchLustatData(key, startPeriod, endPeriod) {
@@ -815,74 +815,80 @@ function formatRows(rows) {
 }
 
 async function callTool(name, args={}) {
-  // Helper: find column value case-insensitively
-  function col(row, ...names) {
-    for (const n of names) {
-      const k = Object.keys(row).find(k => k.replace(/[^A-Z]/gi,"").toUpperCase() === n.replace(/[^A-Z]/gi,"").toUpperCase());
-      if (k && row[k] && row[k].trim()) return row[k].trim();
-    }
-    return "";
-  }
+  // Real LUSTAT column names from SDMX-JSON response
+  // NACE_R2=sector, EDUC_LEVEL=education, TIME_PERIOD=year, OBS_VALUE=wage
 
   if (name==="list_codes") return [
-    "## LUSTAT DF_C1217 — Available Codes","","### NACE Sectors",
+    "## LUSTAT DF_C1217 — Available Codes","","### NACE Rev.2 Sectors",
     ...Object.entries(NACE_SECTORS).map(([k,v])=>`  ${k.padEnd(8)} ${v}`),
-    "","### Education Levels",
+    "","### Education Levels (ISCED)",
     ...Object.entries(EDUCATION_LEVELS).map(([k,v])=>`  ${k.padEnd(8)} ${v}`),
   ].join("\n");
 
   if (name==="get_wage_data") {
-    const s=args.sector||"_T", edu=args.education||"A4";
-    const eduKey = edu==="A4" ? "." : edu;
-    const secKey = s==="_T" ? "." : s;
+    const s   = args.sector    || "_T";
+    const edu = args.education || "_T";
     const rows = await fetchLustatData("all", args.startPeriod||"2010", args.endPeriod||null);
-    if (rows.length>0) console.log("[DEBUG HEADERS]", Object.keys(rows[0]).join(" | "));
-    if (rows.length>0) console.log("[DEBUG ROW0]", JSON.stringify(rows[0]));
-    // Try to find OBS_VALUE column
-    const valKey = rows.length ? Object.keys(rows[0]).find(k=>k.toUpperCase().includes("OBS")||k.toUpperCase().includes("VALUE")||k.toUpperCase()==="WAGE") : "OBS_VALUE";
-    const lines = rows.slice(0,50).map(r => {
-      const period = col(r,"TIMEPERIOD","TIME","PERIOD","YEAR");
-      const val = valKey ? r[valKey] : "";
-      return `${period} | ${val} EUR`;
+    const filtered = rows.filter(r => {
+      const sMatch = s==="_T" || r.NACE_R2===s;
+      const eMatch = edu==="_T" || r.EDUC_LEVEL===edu;
+      return sMatch && eMatch;
     });
-    return [`## Monthly Wages — ${NACE_SECTORS[s]||s}`,`Education: ${EDUCATION_LEVELS[edu]||edu}`,`Rows: ${rows.length}`,"",lines.join("\n")].join("\n");
+    const lines = filtered.map(r =>
+      `${r.TIME_PERIOD} | ${r.NACE_R2} | ${r.EDUC_LEVEL} | ${parseFloat(r.OBS_VALUE).toLocaleString("fr-LU")} EUR`
+    );
+    return [
+      `## Monthly Wages — ${NACE_SECTORS[s]||s}`,
+      `Education: ${EDUCATION_LEVELS[edu]||edu}`,
+      `Rows: ${filtered.length}`, "", lines.join("\n")
+    ].join("\n");
   }
 
   if (name==="compare_sectors") {
-    const edu=args.education||"A4", yr=args.year||"2022";
-    const rows=await fetchLustatData("all",yr,yr);
-    if (rows.length>0) console.log("[DEBUG HEADERS]", Object.keys(rows[0]).join(" | "));
-    if (rows.length>0) console.log("[DEBUG ROW0]", JSON.stringify(rows[0]));
-    const valKey = rows.length ? Object.keys(rows[0]).find(k=>k.toUpperCase().includes("OBS")||k.toUpperCase().includes("VALUE")) : null;
-    const map={};
-    rows.forEach(r=>{
-      const s=col(r,"ACTIVITY","NACE","NACER2","SECTOR");
-      const v=parseFloat(valKey?r[valKey]:0);
-      if(s&&v>100) { if(!map[s]||v>map[s]) map[s]=v; }
+    const edu = args.education || "_T";
+    const yr  = args.year || "2022";
+    const rows = await fetchLustatData("all", yr, yr);
+    const map = {};
+    rows.forEach(r => {
+      const eMatch = edu==="_T" || r.EDUC_LEVEL===edu;
+      const v = parseFloat(r.OBS_VALUE);
+      if (r.NACE_R2 && v > 0 && eMatch) {
+        if (!map[r.NACE_R2] || v > map[r.NACE_R2]) map[r.NACE_R2] = v;
+      }
     });
-    const sorted=Object.entries(map).sort(([,a],[,b])=>b-a)
-      .map(([c,v],i)=>`${i+1}. ${(NACE_SECTORS[c]||c).padEnd(45)} ${v.toLocaleString()} EUR`);
-    return [`## Sector Ranking ${yr}`,"",
-      sorted.length?sorted.join("\n"):`Debug: ${rows.length} rows. Headers: ${rows.length?Object.keys(rows[0]).join(", "):""}`
+    const sorted = Object.entries(map)
+      .sort(([,a],[,b]) => b-a)
+      .map(([code,val],i) =>
+        `${i+1}. ${(NACE_SECTORS[code]||code).padEnd(45)} ${val.toLocaleString("fr-LU")} EUR`
+      );
+    return [
+      `## Sector Ranking ${yr}`,
+      `Education: ${EDUCATION_LEVELS[edu]||edu}`, "",
+      sorted.length ? sorted.join("\n") : "No data found"
     ].join("\n");
   }
 
   if (name==="compare_education") {
-    const s=args.sector||"_T", yr=args.year||"2022";
-    const rows=await fetchLustatData("all",yr,yr);
-    if (rows.length>0) console.log("[DEBUG HEADERS]", Object.keys(rows[0]).join(" | "));
-    if (rows.length>0) console.log("[DEBUG ROW0]", JSON.stringify(rows[0]));
-    const valKey = rows.length ? Object.keys(rows[0]).find(k=>k.toUpperCase().includes("OBS")||k.toUpperCase().includes("VALUE")) : null;
-    const map={};
-    rows.forEach(r=>{
-      const e=col(r,"EDUCATION","ISCED","EDU","EDUC");
-      const v=parseFloat(valKey?r[valKey]:0);
-      if(e&&v>100) { if(!map[e]||v>map[e]) map[e]=v; }
+    const s  = args.sector || "_T";
+    const yr = args.year || "2022";
+    const rows = await fetchLustatData("all", yr, yr);
+    const map = {};
+    rows.forEach(r => {
+      const sMatch = s==="_T" || r.NACE_R2===s;
+      const v = parseFloat(r.OBS_VALUE);
+      if (r.EDUC_LEVEL && v > 0 && sMatch) {
+        if (!map[r.EDUC_LEVEL] || v > map[r.EDUC_LEVEL]) map[r.EDUC_LEVEL] = v;
+      }
     });
-    const sorted=Object.entries(map).sort(([,a],[,b])=>b-a)
-      .map(([c,v])=>`${(EDUCATION_LEVELS[c]||c).padEnd(55)} ${v.toLocaleString()} EUR`);
-    return [`## Education Comparison ${yr}`,`Sector: ${NACE_SECTORS[s]||s}`,"",
-      sorted.length?sorted.join("\n"):`Debug: ${rows.length} rows. Headers: ${rows.length?Object.keys(rows[0]).join(", "):""}`
+    const sorted = Object.entries(map)
+      .sort(([,a],[,b]) => b-a)
+      .map(([code,val]) =>
+        `${(EDUCATION_LEVELS[code]||code).padEnd(55)} ${val.toLocaleString("fr-LU")} EUR`
+      );
+    return [
+      `## Education Comparison ${yr}`,
+      `Sector: ${NACE_SECTORS[s]||s}`, "",
+      sorted.length ? sorted.join("\n") : "No data found"
     ].join("\n");
   }
 
